@@ -2,6 +2,7 @@
 import curses
 import time
 import random
+from abc import ABCMeta, abstractmethod
 
 
 #screen
@@ -11,6 +12,7 @@ HEIGHT=10;
 #food
 FOOD='$'
 FOOD_P=[]
+FOOD_NUM=1
 SNAKES=[]
 WALL='@'
 
@@ -124,126 +126,67 @@ def move_method(p,n):
     return Fplse
 
 
-class Snake(object):
+r'''
+Base class for BOTH real and virtual snakes
+'''
+class BaseSnake(object):
     #(x,y)
-    __head=tuple()
+    _head=tuple()
 
     #body(-1) is the first body
-    __body=[]
+    _body=[]
 
-    __eat=False
+    _direct=None
+
+    _eat=False
+
     
-    __direct=None
-
-    def __init__(self,x,y,body):
-        self.__head=(x,y)
-        self.BODY=body
-
+    def __init__(self):
         pass
+
     def taken(self,(x,y)):
-        if (x,y) in self.__body+[self.__head]:
+        if (x,y) in self._body+[self._head]:
             return True
         return False
-    
-    def run(self):
-        self.__move()
-        if self.__judge() is True:
-            self.__frame()
-        else:
-            #game over
-            pass
-            #import pdb;pdb.set_trace()
-            #curses.endwin()
-        
-    def __move(self):
-        
-        tmphead=self.__head
 
-        if self.__direct in range(1,5):
-            if self.__direct==1:
+    def _move(self):
+        
+        tmphead=self._head
+
+        if self._direct in range(1,5):
+            if self._direct==1:
                 #up
-                self.__head=(self.__head[0],self.__head[1]-1)
-            if self.__direct==2:
+                self._head=(self._head[0],self._head[1]-1)
+            if self._direct==2:
                 #down
-                self.__head=(self.__head[0],self.__head[1]+1)
-            if self.__direct==3:
+                self._head=(self._head[0],self._head[1]+1)
+            if self._direct==3:
                 #left
-                self.__head=(self.__head[0]-1,self.__head[1])
-            if self.__direct==4:
+                self._head=(self._head[0]-1,self._head[1])
+            if self._direct==4:
                 #left
-                self.__head=(self.__head[0]+1,self.__head[1])
+                self._head=(self._head[0]+1,self._head[1])
         else:
             return False
 
-        if len(self.__body)==0:
-            if self.__eat:
-                self.__body.append(tmphead)
+        if len(self._body)==0:
+            if self._eat:
+                self._body.append(tmphead)
         else:
-            if not self.__eat:
-                self.__body.pop(0)
-            self.__body.append(tmphead)
+            if not self._eat:
+                self._body.pop(0)
+            self._body.append(tmphead)
 
                 
-        if self.__eat is True:
-            self.__eat=False
+        if self._eat is True:
+            self._eat=False
 
-
-    def dump(self):
-        print self.__head
-        print self.__body
-
-    def __judge(self):
-        if not valid_pos(self.__head):
-            return False
-        if self.__head in self.__body:
-            #import pdb;pdb.set_trace()
-            return False
-        if self.__head in FOOD_P:
-            self.__eat=True
-            remove_food(self.__head)
-        return True
-
-    def __frame(self):
-        SCR.clear()
-        make_border()
-        for i in self.__body:
-            SCR.addch(i[1],i[0],self.BODY)
-        SCR.addch(self.__head[1],self.__head[0],HEAD_MAP.get(self.__direct,'+'))
-        for i in FOOD_P:
-            try:
-                SCR.addch(i[1],i[0],'$')
-            except:
-                import pdb;pdb.set_trace()
-            
-            
-        SCR.refresh()
-
-        LOG.clear()
-        LOG.addstr(0,0,"head: (%d,%d)"%self.__head)
-        LOG.refresh()
-
-        time.sleep(0.1)
-
-    def set_direct_by_key(self,key):
-        if k in DIRECT_MAP:
-            direct=DIRECT_MAP.get(k) 
-            if len(self.__body)==0:
-                #can turn every direction
-                self.__direct=direct
-                return True
-            if self.__direct==1 and direct ==2:
-                return False
-            if self.__direct==2 and direct ==1:
-                return False
-            if self.__direct==3 and direct ==4:
-                return False
-            if self.__direct==4 and direct ==3:
-                return False
-            
-            self.__direct=direct
+    @abstractmethod
+    def _judge(self):
+        pass
 
     def set_direct(self,direct):
-        self.__direct=direct
+        self._direct=direct
 
     r'''
     Given the previous dot,  get next possible moves
@@ -265,12 +208,14 @@ class Snake(object):
                 #log("not valid : %s\n"% unicode(i))
                 continue
                 tmprtn.remove(i)
-            if i in self.__body:
+            if i in self._body:
                 #log("in body: %s\n"% unicode(i))
                 continue
             
             rtn.append(i)
             
+        #randomly choose a direction
+        random.shuffle(rtn)
         
         return rtn
 
@@ -284,14 +229,14 @@ class Snake(object):
         if len(FOOD_P)==0:
             return {}
         
-        start=self.__head
+        start=self._head
         preadd=[]
 
-        if len(self.__body)==0:
+        if len(self._body)==0:
             #import pdb;pdb.set_trace()
             preadd=self.get_next(start)
         else:
-            preadd=self.get_next(start,self.__body[-1])
+            preadd=self.get_next(start,self._body[-1])
         
         for i in preadd:
             relations.update({i:start})
@@ -328,7 +273,7 @@ class Snake(object):
         for i in FOOD_P:
             if i in tree:
                 end=i
-        start=self.__head
+        start=self._head
 
         last=tree.get(end)
         while last!=start and last !=():
@@ -344,6 +289,111 @@ class Snake(object):
                 operation.append(method)
             
         return operation
+
+class VirtualSnake(BaseSnake):
+    
+    def __init__(self,head,body):
+        #Init virtual snake by real snake
+        BaseSnake(self)
+        self._head=head
+        self._body=body
+        #Auto get direction by relation of head and body
+        if len(body) !=0:
+            self._direct=move_method(body[-1],head)
+        else:
+            self._direct=None
+
+    def __del__(self):
+        pass
+
+    def _judge(self):
+        if not valid_pos(self._head):
+            return False
+        if self._head in self._body:
+            #import pdb;pdb.set_trace()
+            return False
+        #if self._head in FOOD_P:
+        #    return False
+        return True
+
+
+class Snake(BaseSnake):
+
+
+
+    def __init__(self,x,y,body):
+        BaseSnake.__init__(self)
+        self._head=(x,y)
+        self.BODY=body
+
+ 
+    def run(self):
+        self._move()
+        if self._judge() is True:
+            self.__frame()
+        else:
+            #game over
+            pass
+            #import pdb;pdb.set_trace()
+            #curses.endwin()
+
+    r'''
+    def dump(self):
+        print self._head
+        print self._body
+    r'''
+
+
+    def _judge(self):
+        if not valid_pos(self._head):
+            return False
+        if self._head in self._body:
+            #import pdb;pdb.set_trace()
+            return False
+        if self._head in FOOD_P:
+            self._eat=True
+            remove_food(self._head)
+        return True
+
+    def __frame(self):
+        SCR.clear()
+        make_border()
+        for i in self._body:
+            SCR.addch(i[1],i[0],self.BODY)
+        SCR.addch(self._head[1],self._head[0],HEAD_MAP.get(self._direct,'+'))
+        for i in FOOD_P:
+            try:
+                SCR.addch(i[1],i[0],'$')
+            except:
+                import pdb;pdb.set_trace()
+            
+            
+        SCR.refresh()
+
+        LOG.clear()
+        LOG.addstr(0,0,"head: (%d,%d)"%self._head)
+        LOG.refresh()
+
+        time.sleep(0.1)
+
+    def set_direct_by_key(self,key):
+        if k in DIRECT_MAP:
+            direct=DIRECT_MAP.get(k) 
+            if len(self._body)==0:
+                #can turn every direction
+                self._direct=direct
+                return True
+            if self._direct==1 and direct ==2:
+                return False
+            if self._direct==2 and direct ==1:
+                return False
+            if self._direct==3 and direct ==4:
+                return False
+            if self._direct==4 and direct ==3:
+                return False
+            
+            self._direct=direct
+
         
     def route(self):
         #thei=0
@@ -351,7 +401,7 @@ class Snake(object):
             #log("the %d try\n"%thei)
             #thei+=1
             tree={}
-            #log("body: %s"% unicode(self.__body))
+            #log("body: %s"% unicode(self._body))
             tree=self.DFS_tree()
             #log("tree: %s"% unicode(tree))
 
@@ -365,9 +415,6 @@ class Snake(object):
                     self.run()
 
 
-            
-            r'''
-            '''
 
         return 
             
@@ -399,7 +446,9 @@ SNAKES.append(s)
 
 
 
-create_food()
+for i in range(FOOD_NUM):
+    create_food()
+#create_food()
 s.route()
 s.run()
 k=SCR.getch()
