@@ -6,8 +6,8 @@ from abc import ABCMeta, abstractmethod
 
 
 #screen
-WIDTH=10;
-HEIGHT=10;
+WIDTH=9;
+HEIGHT=9;
 
 #food
 FOOD='$'
@@ -16,10 +16,15 @@ FOOD_NUM=1
 SNAKES=[]
 WALL='@'
 
+FPS=10.0
+GAP=1/FPS
+with open("log.txt","w") as flusher:
+    pass
+
 PLAT=curses.initscr()
 
-SCR=curses.newwin(HEIGHT+1,WIDTH+1,5,5)
-LOG=curses.newwin(10,30,30,20)
+SCR=curses.newwin(HEIGHT+1,WIDTH+1,2,2)
+LOG=curses.newwin(10,30,30,60)
 
 def make_border():
     for i in xrange(1,WIDTH):
@@ -210,23 +215,26 @@ class BaseSnake(object):
                 tmprtn.remove(i)
             if i in self._body:
                 #log("in body: %s\n"% unicode(i))
-                continue
+                if i in self._body[1:]:
+                    #log("in body")
+                    continue
             
             rtn.append(i)
             
         #randomly choose a direction
         random.shuffle(rtn)
+        #log("rtn: %s"%unicode(rtn))
         
         return rtn
 
 
 
-    def DFS_tree(self):
+    def BFS_tree(self,dsts):
         #tree of relationship
         relations={}
         #queue of undiscovered positions
         queue=[]
-        if len(FOOD_P)==0:
+        if len(dsts)==0:
             return {}
         
         start=self._head
@@ -241,7 +249,7 @@ class BaseSnake(object):
         for i in preadd:
             relations.update({i:start})
             queue.append(i)
-            if i in FOOD_P:
+            if i in dsts:
                 return relations
         
         while len(queue) !=0:
@@ -251,14 +259,14 @@ class BaseSnake(object):
                 if i not in relations:
                     relations.update({i:tmp})
                     queue.append(i)
-                    if i in FOOD_P:
+                    if i in dsts:
                         return relations
             log("loop: %s\n"%unicode(queue))
 
         
         log("end of tree\n")
         return {}
-    def tree2direct(self,tree={}):
+    def tree2direct(self,dsts,tree={}):
         r'''
 
             end: one position
@@ -270,7 +278,7 @@ class BaseSnake(object):
             return []
         end=()
         operation=[]
-        for i in FOOD_P:
+        for i in dsts:
             if i in tree:
                 end=i
         start=self._head
@@ -294,17 +302,24 @@ class VirtualSnake(BaseSnake):
     
     def __init__(self,head,body):
         #Init virtual snake by real snake
-        BaseSnake(self)
-        self._head=head
-        self._body=body
+        BaseSnake.__init__(self)
+        self._head=head[:]
+        self._body=body[:]
+        self.__real_head=head
+        self.__real_body=body
         #Auto get direction by relation of head and body
         if len(body) !=0:
             self._direct=move_method(body[-1],head)
         else:
             self._direct=None
 
-    def __del__(self):
-        pass
+        self.__real_direct=self._direct
+
+    def __reset(self):
+        self._head=self.__real_head[:]
+        self._body=self.__real_body[:]
+        self._direct=self.__real_direct
+
 
     def _judge(self):
         if not valid_pos(self._head):
@@ -312,14 +327,158 @@ class VirtualSnake(BaseSnake):
         if self._head in self._body:
             #import pdb;pdb.set_trace()
             return False
-        #if self._head in FOOD_P:
-        #    return False
+        if self._head in FOOD_P:
+            self._eat=True
         return True
+
+
+    def run(self):
+        self._move()
+        #self._judge()
+
+    def __to_food(self):
+        tree={}
+        ops=[]   #operation
+
+        tree=self.BFS_tree(FOOD_P)
+
+        
+        #log("tree: %s"% unicode(tree))
+        if len(tree)!=0:
+            ops=self.tree2direct(FOOD_P,tree)
+            if len(ops)!=0:
+                for i in ops[::-1]:
+                    self.set_direct(i)
+                    self.run()
+            else:
+                log("Unexpected error")
+
+            #operations to get to food
+            return ops
+
+        #can not see any food
+        return []
+    
+    def last_move(self):
+        #Go one setp back
+        self._head=self.tmphead
+        self._body=self.tmpbody
+        self._direct=self.tmpdirect
+
+    def try_move(self):
+        #Return possible move routes
+        routes=[]
+        moves=self.get_next(self._head,self._body[-1])
+        if len(moves)==0:
+            #Dead
+            return []
+
+        self.tmphead=self._head[:]
+        self.tmpbody=self._body[:]
+        self.tmpdirect=self._direct
+        for i in moves:
+            self.direct=move_method(i,self._head)
+            self.run()
+            if self._judge() is True:
+                routes.append(self.direct)
+            self.last_move()
+        
+        log("routes :  %s"%unicode(routes))
+        return routes
+                
+        
+
+    #Always return operation list
+    def route(self):
+
+        tree={}
+        ops=[]
+
+
+        r'''
+        If length of ops is not 0 , virtual snake is already gone to food
+        '''
+        ops=self.__to_food()
+        
+        tofood=False
+        
+        operations=list()
+        
+        if len(ops)!=0:
+            tofood=True
+            #Moved
+            if len(self._body)==0:
+                return ops
+            log("body tree\n %s\n"% unicode(self._body[0]))
+            tree=self.BFS_tree([self._body[0]])
+            log("body bfs_tree: %s"%unicode(tree))
+            if len(tree)!=0:
+                return ops
+            else:
+                operations.append(ops)
+                log("virtual snake  head:%s,body%s"%(unicode(self._head),unicode(self._body)))
+                #No way to tail, back to origin
+                self.__reset()
+                log("virtual snake  head:%s,body%s"%(unicode(self._head),unicode(self._body)))
+                for i in xrange(5):
+                    #try some times
+                    ops=self.__to_food()
+                    if ops in operations:
+                        self.__reset()
+                        break
+                    tree=self.BFS_tree([self._body[0]])
+                    if len(tree)!=0:
+                        return ops
+                    else: 
+                        operations.append(ops)
+                        self.__reset()
+                    
+
+        r'''
+        Now back at origin place
+        And cannot run for food directly
+        '''
+            
+        tree=self.BFS_tree([self._body[0]])
+        if len(tree)==0:
+            r'''
+            No food and no tail !! no !!
+            '''
+            moves=self.try_move()
+            if len(moves)==0:
+                log("no move")
+                return []
+            #TODO
+            random.shuffle(moves)
+            return [moves[0]]
+            
+        else:
+            r'''
+            Move one step to tail
+            '''
+            ops=self.tree2direct([self._body[0]],tree)
+            log("step to tail")
+            if len(ops)!=0:
+                return [ops[-1]]
+            else:
+                log("Unexpected error")
+            
+                    
+        return []
+                
+            
+        
+            
+
+        
+
 
 
 class Snake(BaseSnake):
 
 
+    _head=tuple()
+    _body=list()
 
     def __init__(self,x,y,body):
         BaseSnake.__init__(self)
@@ -374,7 +533,7 @@ class Snake(BaseSnake):
         LOG.addstr(0,0,"head: (%d,%d)"%self._head)
         LOG.refresh()
 
-        time.sleep(0.1)
+        time.sleep(GAP)
 
     def set_direct_by_key(self,key):
         if k in DIRECT_MAP:
@@ -398,21 +557,17 @@ class Snake(BaseSnake):
     def route(self):
         #thei=0
         while 1:
-            #log("the %d try\n"%thei)
-            #thei+=1
-            tree={}
-            #log("body: %s"% unicode(self._body))
-            tree=self.DFS_tree()
-            #log("tree: %s"% unicode(tree))
-
-            
-            if len(tree)==0:
+            ops=[]
+            vs=VirtualSnake(self._head,self._body)
+            ops=vs.route()
+            del vs
+            if len(ops)==0:
                 return
-            ops=self.tree2direct(tree)
-            if len(ops) !=0:
-                for i in ops[::-1]:
-                    self.set_direct(i)
-                    self.run()
+            log("head: %s\n body: %s \n food: %s \nops  %s \n length:%s\n"%(unicode(self._head),unicode(self._body),unicode(FOOD_P),unicode(ops),unicode(len(self._body))))
+
+            for i in ops[::-1]:
+                self.set_direct(i)
+                self.run()
 
 
 
@@ -450,7 +605,7 @@ for i in range(FOOD_NUM):
     create_food()
 #create_food()
 s.route()
-s.run()
+#s.run()
 k=SCR.getch()
 while k!=27:
     k=SCR.getch()
